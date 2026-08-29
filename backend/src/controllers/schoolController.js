@@ -492,9 +492,26 @@ async function getSchoolSettings(req, res, next) {
 // PATCH /api/schools/:schoolSlug/settings
 async function updateSchoolSettings(req, res, next) {
   try {
-    const { setSchoolSetting, SETTING_KEYS } = require('../services/schoolSettingsService');
+    const { setSchoolSetting, SETTING_KEYS, validateSettingValue } = require('../services/schoolSettingsService');
     const school = await School.findOne({ slug: req.params.schoolSlug.toLowerCase(), isActive: true }, { schoolId: 1 }).lean();
     if (!school) return next(Object.assign(new Error('School not found'), { code: 'NOT_FOUND' }));
+
+    // Validate all keys before writing any of them (all-or-nothing)
+    const validationErrors = [];
+    for (const [key, value] of Object.entries(req.body)) {
+      if (!SETTING_KEYS.has(key)) continue; // unknown keys are silently skipped
+      try {
+        validateSettingValue(key, value);
+      } catch (err) {
+        validationErrors.push(err.message);
+      }
+    }
+    if (validationErrors.length > 0) {
+      return res.status(400).json({
+        error: validationErrors.join('; '),
+        code: 'VALIDATION_ERROR',
+      });
+    }
 
     const updated = {};
     for (const [key, value] of Object.entries(req.body)) {
